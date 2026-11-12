@@ -8,6 +8,8 @@ MIPS = f_MHz / CPI = IC / (T_exec * 10^6)
 """
 from typing import Dict, Any
 
+from . import arch_model
+
 def format_time(seconds: float) -> str:
     if seconds < 1e-6:
         return f"{seconds * 1e9:.2f} ns"
@@ -97,11 +99,12 @@ class PerformanceAnalyzerService:
         }
 
         # Workload composition breakdown
+        mix = arch_model.INSTRUCTION_MIX
         instruction_distribution = {
-            "ALU": {"count": round(instruction_count * 0.42), "pct": 42.0, "color": "#006b2c"},
-            "Memory": {"count": round(instruction_count * 0.28), "pct": 28.0, "color": "#0051d5"},
-            "Branch": {"count": round(instruction_count * 0.12), "pct": 12.0, "color": "#6b38d4"},
-            "Others": {"count": round(instruction_count * 0.18), "pct": 18.0, "color": "#bdcaba"},
+            "ALU": {"count": round(instruction_count * mix["ALU"]), "pct": round(mix["ALU"] * 100.0, 1), "color": "#006b2c"},
+            "Memory": {"count": round(instruction_count * mix["Memory"]), "pct": round(mix["Memory"] * 100.0, 1), "color": "#0051d5"},
+            "Branch": {"count": round(instruction_count * mix["Branch"]), "pct": round(mix["Branch"] * 100.0, 1), "color": "#6b38d4"},
+            "Others": {"count": round(instruction_count * mix["Other"]), "pct": round(mix["Other"] * 100.0, 1), "color": "#bdcaba"},
         }
 
         return {

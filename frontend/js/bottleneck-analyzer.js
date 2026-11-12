@@ -1,8 +1,8 @@
 /**
  * CPU Performance Explorer - Bottleneck Analyzer Controller
- * Implements Intel/AMD Top-Down Microarchitecture Analysis (TMA),
+ * Implements a heuristic, TMA-style (Top-Down Microarchitecture Analysis) breakdown,
  * structural stall categorization with actionable optimization recommendations,
- * and live host hardware telemetry streaming.
+ * and live host telemetry streaming (estimated from psutil, not hardware PMU reads).
  */
 
 (function () {
@@ -50,7 +50,7 @@
   }
 
   // =========================================================================
-  // Live Silicon Hardware PMU Streaming (Host OS Telemetry Integration)
+  // Live Host Telemetry Streaming (PMU-style estimates derived from OS counters)
   // =========================================================================
 
   async function togglePMUStream() {
@@ -69,14 +69,14 @@
         indicator.className = 'w-2.5 h-2.5 rounded-full bg-primary animate-ping';
       }
       if (label) {
-        label.textContent = 'Host PMU Stream: Live';
+        label.textContent = 'Host Telemetry Stream: Live';
       }
       if (monitorCard) {
         monitorCard.classList.remove('hidden');
       }
 
       if (window.showToast) {
-        window.showToast('Streaming live host hardware silicon PMU events...', 'success');
+        window.showToast('Streaming live host telemetry (estimated counters)...', 'success');
       }
 
       await pollHardwarePMU();
@@ -94,7 +94,7 @@
         indicator.className = 'w-2.5 h-2.5 rounded-full bg-slate-400';
       }
       if (label) {
-        label.textContent = 'Host PMU Stream: Off';
+        label.textContent = 'Host Telemetry Stream: Off';
       }
       if (monitorCard) {
         monitorCard.classList.add('hidden');
@@ -145,7 +145,8 @@
         retireRateEl.textContent = gips;
       }
 
-      // Re-evaluate microarchitectural bottleneck using live silicon telemetry
+      // Re-evaluate the bottleneck model using the live estimated telemetry.
+      // Modern x86 cores are ~4-wide; live IPC can exceed 1, so the width must be explicit.
       const liveCpi = 1.0 / Math.max(0.2, pmu.live_ipc);
       const res = await apiFetch('/api/bottleneck/analyze', {
         method: 'POST',
@@ -153,8 +154,9 @@
           cpi: parseFloat(liveCpi.toFixed(2)),
           llc_miss_rate: parseFloat(pmu.llc_miss_rate.toFixed(1)),
           branch_mispredict_rate: parseFloat(pmu.branch_mispredict_rate.toFixed(1)),
-          pipeline_stall_pct: 20.0,
-          dram_latency_ns: 65.0
+          pipeline_stall_pct: Number.isFinite(pmu.pipeline_stall_pct) ? pmu.pipeline_stall_pct : 20.0,
+          dram_latency_ns: 65.0,
+          issue_width: 4
         })
       });
 

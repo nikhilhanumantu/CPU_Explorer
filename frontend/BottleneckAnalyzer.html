@@ -32,9 +32,9 @@
 <!-- Right Controls -->
 <div class="flex items-center flex-wrap gap-space-sm">
 <!-- Hardware Silicon PMU Stream Toggle Button -->
-<button id="btn-toggle-pmu" class="inline-flex items-center gap-2 h-10 px-space-md rounded-xl bg-surface-container-lowest hover:bg-surface-container text-on-surface font-label-md text-label-md shadow-sm transition-all border border-surface-container" title="Stream live hardware Performance Monitoring Unit (PMU) counters from host CPU silicon">
+<button id="btn-toggle-pmu" class="inline-flex items-center gap-2 h-10 px-space-md rounded-xl bg-surface-container-lowest hover:bg-surface-container text-on-surface font-label-md text-label-md shadow-sm transition-all border border-surface-container" title="Stream PMU-style counters estimated from live host OS telemetry (not hardware PMU reads)">
   <span id="pmu-pulse-indicator" class="w-2.5 h-2.5 rounded-full bg-slate-400"></span>
-  <span id="pmu-toggle-text" class="font-semibold">Host PMU Stream: Off</span>
+  <span id="pmu-toggle-text" class="font-semibold">Host Telemetry Stream: Off</span>
 </button>
 <div class="flex items-center bg-surface-container-lowest shadow-sm rounded-xl px-space-md py-2 gap-space-xs text-on-surface">
 <span class="material-symbols-outlined text-[18px] text-on-surface-variant">history</span>
@@ -64,13 +64,13 @@
       </div>
       <div>
         <div class="flex items-center gap-2">
-          <h3 class="font-title-md text-title-md text-on-surface font-bold">Live Host Hardware Silicon PMU Stream</h3>
+          <h3 class="font-title-md text-title-md text-on-surface font-bold">Live Host Telemetry Stream (Estimated)</h3>
           <span id="pmu-elevation-badge" class="px-2.5 py-0.5 rounded-full bg-primary-fixed text-on-primary-fixed-variant font-code-mono text-label-xs font-bold">
-            Calibrated Host Profiler
+            Estimated Host Profiler
           </span>
         </div>
         <p id="pmu-cpu-model" class="font-body-sm text-body-sm text-on-surface-variant font-code-mono mt-0.5">
-          Calibrated microarchitectural stall decomposition using host activity counters
+          Heuristic stall decomposition from host activity counters (psutil); not hardware PMU reads
         </p>
       </div>
     </div>

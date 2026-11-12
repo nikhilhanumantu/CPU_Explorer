@@ -1,11 +1,13 @@
 """
-Hardware Performance Monitoring Unit (PMU) & Silicon Telemetry Service.
-Captures live host hardware metrics and computes calibrated microarchitectural indicators:
+Host Telemetry Service (PMU-style estimates).
+Reads real OS activity counters via psutil (CPU %, memory %, context switches, I/O) and
+derives ESTIMATED microarchitectural indicators from them with fixed heuristic formulas:
 - LLC (L3) Cache Miss Rate
 - Branch Misprediction Rate
 - IPC & Instruction Retirement Rate
 - Microarchitectural Stall Cycles (Frontend/Backend bound)
-Uses high-resolution user-mode OS telemetry (psutil) and calibrated silicon performance models.
+These values are NOT read from the CPU's hardware performance counters (no ETW / perf /
+MSR access) and have not been calibrated against real counter data.
 """
 import os
 import sys
@@ -36,8 +38,8 @@ class HardwarePMUService:
     @classmethod
     def get_live_pmu(cls) -> dict:
         """
-        Polls live hardware performance telemetry from host silicon.
-        Uses calibrated silicon performance models driven by OS activity counters (psutil).
+        Polls live host telemetry and derives estimated PMU-style indicators.
+        Heuristic models driven by OS activity counters (psutil); not hardware PMU reads.
         """
         now = time.time()
         dt = max(0.2, now - cls._last_sample_time) if cls._last_sample_time > 0 else 1.0
@@ -106,9 +108,9 @@ class HardwarePMUService:
         temp_c = round(40.0 + (cpu_total * 0.38) + (cur_freq_ghz * 2.5), 1)
 
         if elevated:
-            probe_mode = f"{sys_name} Calibrated Host Hardware Telemetry (Admin Mode)"
+            probe_mode = f"{sys_name} Estimated Host Telemetry (Admin Mode)"
         else:
-            probe_mode = f"{sys_name} Calibrated Host Hardware Telemetry (User Mode)"
+            probe_mode = f"{sys_name} Estimated Host Telemetry (User Mode)"
 
         return {
             "timestamp": time.strftime("%H:%M:%S"),

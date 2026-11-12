@@ -32,9 +32,9 @@ def get_processes(limit: int = 20):
 @router.get("/pmu", response_model=HardwarePMUResponse)
 def get_hardware_pmu():
     """
-    Returns real-time host hardware PMU (Performance Monitoring Unit) metrics,
-    including live L3 cache miss rate, branch mispredictions, IPC, and instruction retirement.
-    Supports Windows ETW / Linux perf elevation status.
+    Returns PMU-style metrics (L3 miss rate, branch mispredictions, IPC, instruction
+    retirement) ESTIMATED from live OS activity counters via psutil. These are heuristic
+    estimates, not reads of the CPU's hardware performance counters.
     """
     return HardwarePMUService.get_live_pmu()
 

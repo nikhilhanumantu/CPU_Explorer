@@ -1,12 +1,15 @@
 """
-Calibrated Microarchitectural Bottleneck Analyzer Service.
-Decomposes execution stalls using Top-Down Microarchitecture Analysis (calibrated TMAM Level-1):
+Heuristic Microarchitectural Bottleneck Analyzer Service.
+Decomposes execution stalls into Top-Down (TMAM Level-1 style) categories. The inputs
+are user-supplied or estimated rates, so the output is a model, not a hardware measurement:
 1. Retiring: fraction of pipeline issue slots processing useful instructions
 2. Bad Speculation: slots wasted due to branch mispredictions and recovery flushes
 3. Frontend Bound: slots starved because fetch/decode cannot deliver uops
 4. Backend Bound: slots stalled due to memory hierarchy latency and execution port contention
 """
 from typing import Dict, Any, List, Optional
+
+from . import arch_model
 
 class BottleneckAnalyzerService:
 
@@ -30,21 +33,17 @@ class BottleneckAnalyzerService:
 
         # Total clock cycles = IC * CPI
         total_cycles = instruction_count * cpi
-        ideal_cycles = instruction_count * 1.0
-        overhead_cycles = max(0.0, total_cycles - ideal_cycles)
 
         # 1. DRAM latency in clock cycles: latency_ns * freq_ghz
         dram_latency_cycles = max(1.0, dram_latency_ns * frequency_ghz)
 
-        # 2. Memory subsystem penalty:
-        # Assumes ~28% memory instructions in canonical workload
-        mem_inst_count = instruction_count * 0.28
+        # 2. Memory subsystem penalty (instruction mix shared via arch_model)
+        mem_inst_count = instruction_count * arch_model.MEM_ACCESS_RATIO
         memory_penalty_cycles = int(mem_inst_count * (llc_miss_rate / 100.0) * (dram_latency_cycles * 0.08))
 
-        # 3. Branch misprediction penalty:
-        # Assumes ~12% branch instructions, 16-stage pipeline flush penalty
-        branch_inst_count = instruction_count * 0.12
-        branch_flush_penalty = 16.0
+        # 3. Branch misprediction penalty (mix and flush cost shared via arch_model)
+        branch_inst_count = instruction_count * arch_model.BRANCH_RATIO
+        branch_flush_penalty = arch_model.BRANCH_FLUSH_PENALTY_CYCLES
         branch_penalty_cycles = int(branch_inst_count * (branch_mispredict_rate / 100.0) * branch_flush_penalty)
 
         # 4. Pipeline dependency and hazard penalty:
@@ -52,7 +51,7 @@ class BottleneckAnalyzerService:
 
         # 5. Structural / execution port contention:
         # Port saturation on arithmetic and vector units
-        structural_penalty_cycles = max(15, int(instruction_count * 0.42 * 0.06 * (cpi / 1.5)))
+        structural_penalty_cycles = max(15, int(instruction_count * arch_model.INSTRUCTION_MIX["ALU"] * 0.06 * (cpi / 1.5)))
 
         total_penalty = memory_penalty_cycles + pipeline_penalty_cycles + branch_penalty_cycles + structural_penalty_cycles
         if total_penalty <= 0:
@@ -108,7 +107,7 @@ class BottleneckAnalyzerService:
             {
                 "name": "Branch Misprediction Penalties",
                 "subsystem": "Branch Target Buffer (BTB)",
-                "description": f"Branch mispredict rate at {branch_mispredict_rate:.1f}% causing frequent 16-cycle pipeline flushes.",
+                "description": f"Branch mispredict rate at {branch_mispredict_rate:.1f}% causing frequent {branch_flush_penalty:.0f}-cycle pipeline flushes.",
                 "penalty_cycles": branch_penalty_cycles,
                 "impact_cycles": branch_penalty_cycles,
                 "impact_pct": round(branch_contrib, 1),
@@ -134,18 +133,16 @@ class BottleneckAnalyzerService:
         top = sorted_items[0]
         primary_culprit = f"Primary culprit: {top['name']} ({top['impact_pct']}% of stall cycles)."
 
-        # Calibrated Top-Down Microarchitecture Decomposition (TMAM Level-1):
-        # In modern microarchitectures (Ahmad Yasin, Intel TMAM), total pipeline issue slots = cycles * issue_width.
+        # Top-Down Microarchitecture Decomposition (TMAM Level-1 style, after Ahmad Yasin):
+        # total pipeline issue slots = cycles * issue_width, so
         # Retiring fraction = IPC / issue_width = 1.0 / (CPI * issue_width).
-        # If issue_width is explicitly provided, use it.
-        # If omitted, determine effective issue width based on execution profile:
-        # - Wide superscalar execution (CPI <= 1.0 or high throughput) models an issue_width of 4.
-        # - In-order scalar execution models an issue_width of 1.
+        # Issue width is a property of the machine, so it is never inferred from CPI
+        # (inferring it makes Retiring jump discontinuously as CPI crosses 1.0).
+        # It defaults to 1 (the scalar textbook pipeline); callers modeling a superscalar
+        # core pass issue_width explicitly.
         ipc = 1.0 / cpi if cpi > 0 else 1.0
-        if issue_width is not None and issue_width > 0:
-            effective_width = float(issue_width)
-        else:
-            effective_width = 4.0 if ipc > 1.0 else 1.0
+        effective_width = float(issue_width) if issue_width is not None and issue_width > 0 else 1.0
+        ipc_exceeds_width = ipc > effective_width
 
         retiring_pct = round(max(5.0, min(95.0, (ipc / effective_width) * 100.0)), 1)
         overhead_slots = round(100.0 - retiring_pct, 1)
@@ -191,6 +188,13 @@ class BottleneckAnalyzerService:
             "Structural": round(struct_contrib, 1)
         }
 
+        formula_explanation = "Bottleneck Score = (CPI Overhead × 60%) + (LLC Miss Rate × 25%) + (Branch Mispredict Rate × 15%)"
+        if ipc_exceeds_width:
+            formula_explanation += (
+                f". IPC ({ipc:.2f}) exceeds the assumed issue width ({effective_width:.0f}), "
+                "so Retiring is capped; pass issue_width to model a superscalar core."
+            )
+
         return {
             "bottleneck_score": score,
             "severity": severity,
@@ -200,7 +204,8 @@ class BottleneckAnalyzerService:
             "items": items,
             "distribution": distribution,
             "tma_levels": tma_levels,
-            "formula_explanation": "Bottleneck Score = (CPI Overhead × 60%) + (LLC Miss Rate × 25%) + (Branch Mispredict Rate × 15%)",
+            "issue_width_used": effective_width,
+            "formula_explanation": formula_explanation,
             "subsystem_weights": {
                 "cpi_overhead_weight": 0.60,
                 "llc_miss_weight": 0.25,

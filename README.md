@@ -1,7 +1,7 @@
 # CPU Performance Explorer
 ### A CPU Performance Bottleneck Analysis and Visualization Tool
 
-A full-stack, cycle-accurate computer architecture diagnostics suite built with **HTML5, CSS3, Vanilla JavaScript (ES6+)**, and **Python 3 (FastAPI, psutil, SQLite, SQLAlchemy)**.
+A full-stack, cycle-level computer architecture diagnostics suite built with **HTML5, CSS3, Vanilla JavaScript (ES6+)**, and **Python 3 (FastAPI, psutil, SQLite, SQLAlchemy)**.
 
 ---
 
@@ -10,10 +10,10 @@ A full-stack, cycle-accurate computer architecture diagnostics suite built with 
 - **No React / No Frontend Frameworks**: Pure vanilla HTML5, CSS3, JavaScript adhering strictly to the Google Stitch design specifications.
 - **Visual Fidelity**: Fully preserves the light theme, gradients, typography (*Plus Jakarta Sans*, *Inter*, *JetBrains Mono*), rounded corners, cards, and animations.
 - **3D Isometric Glowing CPU**: True multi-planar isometric processor package with neon pulse animations, chrome pins, PCB circuit traces with traveling electron pulses, and 3D mouse parallax tilt.
-- **Live Hardware Telemetry**: Low-overhead hardware monitoring powered by `psutil` measuring actual CPU loads, per-core utilization matrix, RAM pools, NVMe I/O throughput, and active compute processes with background daemon caching.
-- **Cycle-Accurate 5-Stage RISC Pipeline**: Simulates Instruction Fetch (IF), Instruction Decode (ID), Execution (EX), Memory Access (MEM), and Write-Back (WB) with Read-After-Write (RAW) hazard detection, load-use delays, forwarding bypass paths (EX/MEM and MEM/WB), interactive cycle-by-cycle stepper, and real-time STALL cell visualization.
+- **Live Hardware Telemetry**: Low-overhead hardware monitoring powered by `psutil` measuring actual CPU loads, per-core utilization matrix, RAM pools, NVMe I/O throughput, and active compute processes with background daemon caching. The PMU-style indicators on the Bottleneck page (LLC miss rate, branch mispredict rate, IPC) are *estimates* derived from these OS counters, not reads of the CPU's hardware performance counters.
+- **Cycle-Level 5-Stage RISC Pipeline** (textbook model; the in-order engine does not model control hazards or multi-cycle execute): Simulates Instruction Fetch (IF), Instruction Decode (ID), Execution (EX), Memory Access (MEM), and Write-Back (WB) with Read-After-Write (RAW) hazard detection, load-use delays, forwarding bypass paths (EX/MEM and MEM/WB), interactive cycle-by-cycle stepper, and real-time STALL cell visualization.
 - **Performance Analyzer (Single & ISA Modes)**: Rigorous Iron Law calculation engine supporting both Single CPU and Instruction Set Architecture (weighted CPI) modes with complete input validation (zero and negative protection).
-- **Intel TMA Top-Down Bottleneck Analysis**: Categorizes execution stalls into Memory Bound, Frontend Stalls, Backend Execution Stalls, and Branch Mispredictions with transparent penalty calculations based on stall ratios.
+- **TMA-Style Top-Down Bottleneck Analysis (heuristic model)**: Splits issue slots into Retiring, Bad Speculation, Frontend Bound, and Backend Bound (Retiring = IPC / issue width, default width 1) and attributes stall penalties to Memory, Pipeline, Branch, and Structural causes. Inputs are user-supplied or estimated rates, not hardware counter reads, and the penalty weights are documented modeling assumptions.
 - **Interactive What-If Sensitivity Explorer**: Dynamic architectural sweeps with live parameter sync, SVG curve decay plots, and SQLite scenario save/load capability.
 - **Dual-CPU Comparison Engine**: Head-to-head architectural differential evaluation with clustered metric comparison bars, 5-point radar view, and comprehensive COA metrics tables.
 - **Reports & Analytics Hub**: Database persistence via SQLite and SQLAlchemy, with instant exports to **JSON**, **CSV**, and clean styled **PDF print** output without dummy data contamination.
@@ -43,6 +43,20 @@ $$\text{Speedup Percentage} = (S - 1) \times 100\%$$
 ### 6. Pipeline Efficiency
 $$\text{Pipeline Efficiency} = \left(\frac{\text{Ideal Clock Cycles}}{\text{Total Measured Cycles}}\right) \times 100\%$$
 $$\text{Where } \text{Ideal Cycles} = N + 4 \text{ for an } N\text{-instruction in-order 5-stage RISC pipeline}$$
+
+---
+
+## 🧮 Modeling Assumptions
+
+All analysis pages read one set of assumptions from `backend/app/services/arch_model.py`, so the numbers agree across pages. They are modeling assumptions, not measurements:
+
+| Assumption | Value |
+|---|---|
+| Instruction mix (ALU / Memory / Branch / Other) | 42% / 28% / 12% / 18% |
+| Branch flush penalty | 16 cycles |
+| Average cache-miss penalty (What-If) | 48 cycles |
+
+What-If CPI: $\text{CPI} = \text{base} + f_{mem} \cdot m \cdot P_{miss} + f_{br} \cdot r \cdot P_{flush} + 0.08 \cdot \text{stalls}$, where $m$ is the cache miss rate and $r$ is the branch mispredict rate.
 
 ---
 
@@ -96,8 +110,8 @@ CPU-Performance-Explorer/
 │   ├── requirements.txt          # Python dependencies
 │   └── tests/
 │       ├── test_api.py           # 11 Unit tests covering REST endpoints
-│       ├── test_coa_engine.py    # 8 COA ground truth & edge case unit tests
-│       └── test_pages.py         # 3 Page, asset, and navigation integrity tests
+│       ├── test_coa_engine.py    # 15 COA ground truth, TMA, pipeline & edge case unit tests
+│       └── test_pages.py         # 4 Page, asset, navigation & redirect integrity tests
 │
 ├── run.py                        # Unified launcher with auto-browser trigger
 ├── start.bat                     # Windows one-click startup script
@@ -139,7 +153,7 @@ To verify the entire backend calculation engine, ground truth COA formulas, and 
 ```bash
 py -m unittest discover backend/tests
 ```
-All **22 tests** execute in under 3 seconds:
-- `test_api.py`: 11 tests verifying API endpoints, psutil telemetry responses, pipeline simulation, reports generation, and scenario persistence.
-- `test_coa_engine.py`: 8 tests verifying hand-calculated Iron Law ground truth, weighted CPI mathematical invariants, zero and negative input validation, forwarding ON vs OFF comparisons, and bottleneck rubric scoring.
-- `test_pages.py`: 3 tests verifying all 8 HTML pages, all referenced JavaScript scripts, and CSS stylesheets resolve with HTTP 200 without broken links.
+The suite contains **30 tests**:
+- `test_api.py`: 11 tests verifying API endpoints, psutil telemetry responses, pipeline simulation, and reports generation.
+- `test_coa_engine.py`: 15 tests verifying hand-calculated Iron Law and What-If CPI ground truth, weighted CPI invariants, zero and negative input validation, forwarding ON vs OFF and stall-cell placement, TMA breakdown (sums to 100%, responds to its inputs, continuous across CPI = 1), shared modeling assumptions, and comparison radar scaling.
+- `test_pages.py`: 4 tests verifying all 8 HTML pages, all referenced JavaScript scripts, and CSS stylesheets resolve with HTTP 200 without broken links, plus the legacy-URL redirects.

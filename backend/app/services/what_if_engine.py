@@ -3,6 +3,7 @@ Interactive What-If Scenario Calculation Engine.
 Models the microarchitectural impact of changes to frequency, base CPI,
 cache miss rates, branch mispredictions, and pipeline stalls.
 """
+from . import arch_model
 
 def format_time(seconds: float) -> str:
     if seconds < 1e-6:
@@ -17,25 +18,18 @@ def format_time(seconds: float) -> str:
 
 class WhatIfService:
 
-    # Computer Architecture Analytical Constants (Hennessy & Patterson model):
-    # 1. Memory Penalty:
-    #    CPI_mem_penalty = MEM_ACCESS_RATIO * (cache_miss_rate / 100) * L3_MISS_PENALTY_CYCLES
-    #    Typical integer/workload mix: ~25% memory instructions (loads/stores).
-    #    Average L3/LLC miss latency to DRAM: ~48 clock cycles.
-    #    Effective weight: 0.25 * 48.0 = 12.0
-    MEM_ACCESS_RATIO = 0.25
-    L3_MISS_PENALTY_CYCLES = 48.0
+    # Analytical CPI model (Hennessy & Patterson):
+    #   CPI = base
+    #         + MEM_ACCESS_RATIO * miss_rate * CACHE_MISS_PENALTY_CYCLES
+    #         + BRANCH_RATIO * mispredict_rate * BRANCH_FLUSH_PENALTY_CYCLES
+    #         + stall_cycles * PIPELINE_STALL_WEIGHT
+    # The instruction mix and penalties come from arch_model so every page agrees.
+    MEM_ACCESS_RATIO = arch_model.MEM_ACCESS_RATIO
+    CACHE_MISS_PENALTY_CYCLES = arch_model.CACHE_MISS_PENALTY_CYCLES
+    BRANCH_RATIO = arch_model.BRANCH_RATIO
+    BRANCH_FLUSH_PENALTY_CYCLES = arch_model.BRANCH_FLUSH_PENALTY_CYCLES
 
-    # 2. Branch Penalty:
-    #    CPI_branch_penalty = BRANCH_RATIO * (branch_mispredict_rate / 100) * BRANCH_FLUSH_PENALTY_CYCLES
-    #    Typical integer mix: ~20% branch instructions.
-    #    Deep superscalar pipeline flush and re-steer penalty: ~40 clock cycles.
-    #    Effective weight: 0.20 * 40.0 = 8.0
-    BRANCH_RATIO = 0.20
-    BRANCH_FLUSH_PENALTY_CYCLES = 40.0
-
-    # 3. Pipeline Structural & RAW Stall Weight:
-    #    Fraction of stall cycles experienced per instruction for interlocks
+    # CPI added per unit of the "stall cycles" input (assumed interlock weight).
     PIPELINE_STALL_WEIGHT = 0.08
 
     BASELINE_FREQ = 3.0
@@ -55,8 +49,8 @@ class WhatIfService:
                   instruction_count: float = 10000.0) -> dict:
         
         # Penalties derived from Hennessy & Patterson analytical CPI models:
-        # Cache penalty addition to CPI: mem_access_ratio * miss_rate * l3_miss_latency
-        mem_penalty_factor = cls.MEM_ACCESS_RATIO * cls.L3_MISS_PENALTY_CYCLES
+        # Cache penalty addition to CPI: mem_access_ratio * miss_rate * miss_penalty
+        mem_penalty_factor = cls.MEM_ACCESS_RATIO * cls.CACHE_MISS_PENALTY_CYCLES
         cache_penalty_cpi = (cache_miss_rate / 100.0) * mem_penalty_factor
 
         # Branch penalty addition to CPI: branch_ratio * mispredict_rate * flush_penalty

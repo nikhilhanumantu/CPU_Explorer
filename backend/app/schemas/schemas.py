@@ -138,6 +138,7 @@ class BottleneckAnalyzeResponse(BaseModel):
     items: List[BottleneckItem]
     distribution: Dict[str, float]
     tma_levels: Optional[Dict[str, float]] = None
+    issue_width_used: Optional[float] = None
     formula_explanation: Optional[str] = None
     subsystem_weights: Optional[Dict[str, float]] = None
 

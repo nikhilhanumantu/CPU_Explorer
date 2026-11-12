@@ -196,7 +196,7 @@ class TestCOAEngine(unittest.TestCase):
             cpi=3.5, llc_miss_rate=45.0, branch_mispredict_rate=5.0, pipeline_stall_pct=15.0
         )
         self.assertIn(res_high_mem["severity"], ["High", "Critical"])
-        self.assertEqual(res_high_mem["items"][0]["name"], "Memory Subsystem Bottleneck")
+        self.assertIn("Memory Subsystem Bottleneck", res_high_mem["primary_culprit"])
 
         # Low bottleneck (ideal execution)
         res_low = BottleneckAnalyzerService.analyze(
@@ -259,6 +259,59 @@ class TestCOAEngine(unittest.TestCase):
         # Between ID and EX, there should be "STALL" and NOT blank ""
         self.assertEqual(ex_index - id_index, 2, "Load-use stall should insert exactly 1 bubble cycle between ID and EX")
         self.assertEqual(i2_row[id_index + 1], "STALL", "Cycle immediately after ID in load-use stall must be 'STALL', not blank")
+
+    def test_tma_retiring_is_continuous_across_cpi_one(self):
+        from backend.app.services.bottleneck_analyzer import BottleneckAnalyzerService
+
+        # Issue width must not be inferred from CPI: a tiny CPI change must not
+        # make Retiring jump (it used to flip from ~95% to ~25% around CPI = 1.0).
+        just_below = BottleneckAnalyzerService.analyze(cpi=0.99)
+        just_above = BottleneckAnalyzerService.analyze(cpi=1.01)
+        self.assertEqual(just_below["issue_width_used"], 1.0)
+        self.assertLess(
+            abs(just_below["tma_levels"]["retiring"] - just_above["tma_levels"]["retiring"]), 5.0
+        )
+
+        # An explicit width is honored: retiring = IPC / width = 100 / (CPI * width).
+        wide = BottleneckAnalyzerService.analyze(cpi=1.0, issue_width=4)
+        self.assertEqual(wide["issue_width_used"], 4.0)
+        self.assertAlmostEqual(wide["tma_levels"]["retiring"], 25.0, places=1)
+
+        # IPC above the assumed width is flagged instead of silently misreported.
+        self.assertIn("exceeds the assumed issue width", just_below["formula_explanation"])
+
+    def test_assumptions_are_shared_across_models(self):
+        from backend.app.services import arch_model
+        from backend.app.services.what_if_engine import WhatIfService
+        from backend.app.services.performance_analyzer import PerformanceAnalyzerService
+
+        self.assertAlmostEqual(sum(arch_model.INSTRUCTION_MIX.values()), 1.0, places=9)
+        self.assertEqual(WhatIfService.MEM_ACCESS_RATIO, arch_model.MEM_ACCESS_RATIO)
+        self.assertEqual(WhatIfService.BRANCH_RATIO, arch_model.BRANCH_RATIO)
+        self.assertEqual(WhatIfService.BRANCH_FLUSH_PENALTY_CYCLES, arch_model.BRANCH_FLUSH_PENALTY_CYCLES)
+
+        dist = PerformanceAnalyzerService.calculate_single(10000, 24700, 3.0)["instruction_distribution"]
+        self.assertEqual(dist["Memory"]["pct"], round(arch_model.MEM_ACCESS_RATIO * 100.0, 1))
+        self.assertEqual(dist["Branch"]["pct"], round(arch_model.BRANCH_RATIO * 100.0, 1))
+
+    def test_what_if_hand_calculated_cpi(self):
+        from backend.app.services.what_if_engine import WhatIfService
+
+        # CPI = 2.47 base
+        #     + 0.28 mem/inst  * 0.10 miss   * 48 cyc   = 1.344
+        #     + 0.12 br/inst   * 0.08 mispr  * 16 cyc   = 0.1536
+        #     + 2 stall cycles * 0.08                   = 0.16
+        #     = 4.1276
+        res = WhatIfService.calculate(
+            frequency_ghz=3.0, base_cpi=2.47, cache_miss_rate=10.0,
+            branch_mispredict_rate=8.0, stall_cycles=2.0, instruction_count=10000.0
+        )
+        self.assertEqual(res["effective_cpi"], 4.13)
+        self.assertEqual(res["cpi_components"]["Cache Miss Penalty"], 1.34)
+        self.assertEqual(res["cpi_components"]["Branch Penalty"], 0.15)
+        self.assertEqual(res["cpi_components"]["Pipeline Stalls"], 0.16)
+        # The default inputs equal the baseline scenario, so there is no speedup.
+        self.assertEqual(res["speedup_pct"], 0.0)
 
     def test_comparison_radar_not_saturated(self):
         from backend.app.services.comparison_engine import CPUComparisonService
